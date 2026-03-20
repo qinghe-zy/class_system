@@ -1,0 +1,18 @@
+<template>
+  <div class="page-card"><div class="page-hero"><div><div class="section-eyebrow">Resource Review</div><h1 class="page-title">资源审核</h1><p class="page-subtitle">审核教师上传的文档、课件、PDF 或附件，优先支持预览判断而不是先下载后判断。</p></div><el-button @click="load">刷新</el-button></div>
+  <div class="toolbar"><el-select v-model="status" clearable placeholder="审核状态" style="width: 160px"><el-option label="待审核" value="PENDING" /><el-option label="已通过" value="APPROVED" /><el-option label="已驳回" value="REJECTED" /></el-select><el-button type="primary" plain @click="load">筛选</el-button></div>
+  <el-table :data="list" border><el-table-column prop="courseName" label="课程" min-width="160" /><el-table-column prop="teacherName" label="教师" width="120" /><el-table-column prop="contentTitle" label="资源标题" min-width="180" /><el-table-column prop="attachmentType" label="类型" width="100" /><el-table-column label="审核状态" width="110"><template #default="{ row }"><StatusBadge :text="auditText(row.auditStatus)" /></template></el-table-column><el-table-column label="更新时间" min-width="160"><template #default="{ row }">{{ formatDateTime(row.updatedTime) }}</template></el-table-column><el-table-column label="操作" min-width="260" fixed="right"><template #default="{ row }"><div class="action-row"><el-button size="small" @click="preview(row)">预览</el-button><el-button size="small" type="success" @click="audit(row, 'APPROVED')">通过</el-button><el-button size="small" type="danger" plain @click="audit(row, 'REJECTED')">驳回</el-button></div></template></el-table-column></el-table>
+  <el-drawer v-model="drawerVisible" :title="activeItem?.contentTitle || '资源预览'" size="42%"><div v-if="activeItem" class="timeline-list"><article class="timeline-item"><div class="timeline-item__time">所属课程</div><h4 class="timeline-item__title">{{ activeItem.courseName || `课程 ${activeItem.courseId}` }}</h4><p class="timeline-item__desc">教师：{{ activeItem.teacherName || `教师 ${activeItem.teacherId}` }}</p></article><article class="timeline-item"><div class="timeline-item__time">资源说明</div><h4 class="timeline-item__title">{{ activeItem.attachmentName || '未上传附件，仅保留文本说明' }}</h4><p class="timeline-item__desc break-words">{{ activeItem.contentBody || '暂无文本说明。' }}</p></article><article class="timeline-item"><div class="timeline-item__time">附件地址</div><h4 class="timeline-item__title">{{ activeItem.attachmentType || '无类型' }}</h4><p class="timeline-item__desc break-words">{{ activeItem.attachmentUrl || '当前资源未包含附件地址。' }}</p></article></div></el-drawer></div>
+</template>
+<script setup>
+import { onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { api } from '../../api'
+import StatusBadge from '../../components/StatusBadge.vue'
+import { auditText, formatDateTime } from '../../utils/format'
+const list = ref([]); const status = ref('PENDING'); const drawerVisible = ref(false); const activeItem = ref(null)
+const load = async () => { list.value = await api.adminCourseContents({ auditStatus: status.value || undefined }) }
+const preview = (row) => { activeItem.value = row; drawerVisible.value = true }
+const audit = async (row, auditStatus) => { const prompt = await ElMessageBox.prompt(auditStatus === 'APPROVED' ? '请输入审核说明（可选）' : '请输入驳回原因', auditStatus === 'APPROVED' ? '资源审核通过' : '资源审核驳回', { inputPlaceholder: auditStatus === 'APPROVED' ? '例如：资源命名规范，内容可发布…' : '例如：标题不明确、说明不足、需补充附件…', inputValue: auditStatus === 'APPROVED' ? '资源合规，可进入学生端' : '' }).catch(() => null); if (!prompt) return; await api.adminAuditCourseContent(row.id, { auditStatus, auditRemark: prompt.value || '' }); ElMessage.success('资源审核已完成'); await load() }
+onMounted(load)
+</script>
