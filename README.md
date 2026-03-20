@@ -32,6 +32,13 @@ npm install
 npm run dev
 ```
 
+可选环境变量（推荐新增 `.env.local`，可参考 `frontend/.env.example`）：
+
+- `VITE_API_BASE_URL`：后端根地址。为空时走同源路径（`/api`、`/uploads`）。
+- `VITE_PROXY_TARGET`：本地开发代理目标（默认 `http://127.0.0.1:8080`）。
+- `VITE_HTTP_TIMEOUT_MS`：通用接口超时。
+- `VITE_UPLOAD_TIMEOUT_MS`：上传接口超时。
+
 生产构建：
 
 ```bash
@@ -46,6 +53,10 @@ npm run build
 cd backend
 mvn spring-boot:run
 ```
+
+可选环境变量：
+
+- `APP_UPLOAD_DIR`：自定义上传目录（默认项目根目录下 `uploads`）。
 
 默认数据库配置见：
 

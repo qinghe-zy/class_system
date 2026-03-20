@@ -69,7 +69,10 @@ export const api = {
   teacherCourseContents: (params) => request.get('/api/teacher/course-contents', { params }),
   createCourseContent: (data) => request.post('/api/teacher/course-contents', data),
   updateCourseContent: (id, data) => request.put(`/api/teacher/course-contents/${id}`, data),
-  uploadTeacherFile: (formData) => request.post('/api/teacher/files/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  uploadTeacherFile: (formData, options = {}) => request.post('/api/teacher/files/upload', formData, {
+    timeout: Number(import.meta.env.VITE_UPLOAD_TIMEOUT_MS || 10 * 60 * 1000),
+    onUploadProgress: options.onUploadProgress
+  }),
   adminCourseContents: (params) => request.get('/api/admin/course-contents', { params }),
   adminAuditCourseContent: (id, data) => request.post(`/api/admin/course-contents/${id}/audit`, data),
   studentCourseContents: (params) => request.get('/api/student/course-contents', { params }),

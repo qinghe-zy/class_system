@@ -6,6 +6,9 @@ import org.apache.poi.hwpf.HWPFDocument;
 import org.apache.poi.hwpf.extractor.WordExtractor;
 import org.apache.poi.hslf.usermodel.HSLFSlideShow;
 import org.apache.poi.sl.extractor.SlideShowExtractor;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.xslf.usermodel.XMLSlideShow;
 import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
@@ -22,11 +25,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/files")
@@ -54,6 +58,7 @@ public class FilePreviewController {
             case "docx" -> extractDocxText(path);
             case "ppt" -> extractPptText(path);
             case "pptx" -> extractPptxText(path);
+            case "xls", "xlsx" -> extractExcelText(path);
             case "txt" -> Files.readString(path);
             default -> throw new BizException("当前文件类型暂不支持文本预览");
         };
@@ -109,6 +114,9 @@ public class FilePreviewController {
             case "docx" -> MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
             case "ppt" -> MediaType.parseMediaType("application/vnd.ms-powerpoint");
             case "pptx" -> MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+            case "xls" -> MediaType.parseMediaType("application/vnd.ms-excel");
+            case "xlsx" -> MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            case "txt" -> MediaType.TEXT_PLAIN;
             default -> {
                 String probe = Files.probeContentType(path);
                 yield probe != null ? MediaType.parseMediaType(probe) : MediaType.APPLICATION_OCTET_STREAM;
@@ -150,6 +158,26 @@ public class FilePreviewController {
              XMLSlideShow slideShow = new XMLSlideShow(in);
              SlideShowExtractor<?, ?> extractor = new SlideShowExtractor<>(slideShow)) {
             return extractor.getText();
+        }
+    }
+
+    private String extractExcelText(Path path) throws IOException {
+        try (InputStream in = Files.newInputStream(path);
+             Workbook workbook = WorkbookFactory.create(in)) {
+            List<String> lines = new ArrayList<>();
+            for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+                Sheet sheet = workbook.getSheetAt(i);
+                lines.add("【工作表】" + sheet.getSheetName());
+                sheet.forEach(row -> {
+                    List<String> cells = new ArrayList<>();
+                    row.forEach(cell -> cells.add(cell.toString()));
+                    if (!cells.isEmpty()) {
+                        lines.add(String.join(" | ", cells));
+                    }
+                });
+                lines.add("");
+            }
+            return String.join("\n", lines);
         }
     }
 }

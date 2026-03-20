@@ -21,7 +21,6 @@
             filterable
             placeholder="选择课程"
             style="width: 260px"
-            @change="refreshAll"
           >
             <el-option v-for="item in courses" :key="item.id" :label="item.courseName" :value="item.id" />
           </el-select>
@@ -42,7 +41,7 @@
             <strong>{{ running ? '学习采集中' : '尚未开始' }}</strong>
           </div>
 
-          <el-button type="primary" :disabled="!currentContent || running" @click="startLearning">开始学习</el-button>
+          <el-button type="primary" :disabled="!canStartLearning || running" @click="startLearning">开始学习</el-button>
           <el-button :disabled="!running" @click="stopLearning">结束学习</el-button>
         </div>
 
@@ -61,13 +60,31 @@
 
           <div class="resource-preview-card">
             <template v-if="previewType === 'video'">
-              <video ref="videoRef" :src="openUrl" controls class="resource-video"></video>
+              <div v-if="videoLoadError" class="resource-fallback">
+                <p>{{ videoLoadErrorText }}</p>
+                <el-button type="primary" @click="openAttachment">打开视频</el-button>
+              </div>
+              <video
+                v-else
+                ref="videoRef"
+                :src="previewUrl"
+                controls
+                class="resource-video"
+                @error="handleVideoError"
+                @loadedmetadata="handleVideoMetaLoaded"
+                @loadeddata="handleVideoLoaded"
+              ></video>
             </template>
             <template v-else-if="previewType === 'pdf'">
               <iframe :src="previewUrl" class="resource-frame" title="学习资源预览"></iframe>
             </template>
             <template v-else-if="previewType === 'office'">
               <iframe :src="previewUrl" class="resource-frame resource-frame--doc" title="Office 文本预览"></iframe>
+            </template>
+            <template v-else-if="previewType === 'image'">
+              <div class="resource-image-wrap">
+                <img :src="previewUrl" class="resource-image" alt="学习资源预览" />
+              </div>
             </template>
             <template v-else>
               <div class="resource-fallback">
@@ -86,6 +103,7 @@
         <div class="info-list">
           <div class="info-item"><span>当前课程</span><strong>{{ courseName(courseId) }}</strong></div>
           <div class="info-item"><span>资源数量</span><strong>{{ contents.length }}</strong></div>
+          <div class="info-item"><span>学习会话</span><strong>{{ currentSessionId ? `#${currentSessionId}` : '未配置' }}</strong></div>
           <div class="info-item"><span>签到任务</span><strong>{{ signTasks.length }}</strong></div>
           <div class="info-item"><span>测验任务</span><strong>{{ quizzes.length }}</strong></div>
           <div class="info-item"><span>最近学习状态</span><strong>{{ behaviorText(lastResult.behaviorStatus) }}</strong></div>
@@ -97,7 +115,7 @@
           type="info"
           :closable="false"
           style="margin-top: 12px;"
-          description="学习采集会在你点击开始学习后自动触发，系统只输出学习进度、参与程度与风险提示，不直接判定你是否认真。"
+          :description="currentSessionId ? '学习采集会在你点击开始学习后自动触发，系统只输出学习进度、参与程度与风险提示，不直接判定你是否认真。' : '当前课程尚未配置课堂会话，仍可浏览资源，但学习采集暂时无法启动。'"
         />
 
         <div class="action-row" style="margin-top: 12px;">
@@ -141,7 +159,7 @@ import { ElMessage } from 'element-plus'
 import { api } from '../../api'
 import AppDialog from '../../components/AppDialog.vue'
 import { behaviorText } from '../../utils/format'
-import { buildFileOpenUrl, buildPreviewUrl, isOfficeFile } from '../../utils/assets'
+import { buildAttachmentOpenUrl, buildPreviewUrl, resolvePreviewType } from '../../utils/assets'
 
 const route = useRoute()
 const router = useRouter()
@@ -159,26 +177,27 @@ const lastResult = ref({})
 const presenceVisible = ref(false)
 const countdown = ref(10)
 const videoRef = ref(null)
+const videoLoadError = ref(false)
+const videoLoadErrorText = ref('')
+const autoStartEnabled = ref(String(route.query.autoStart || '') === '1')
+const autoStartDone = ref(false)
 
 let reportTimer = null
 let presenceTimer = null
 let countdownTimer = null
-let currentSessionId = null
+const currentSessionId = ref(null)
 let startAt = null
 
 const courseMap = computed(() => Object.fromEntries(courses.value.map((item) => [item.id, item.courseName])))
 const courseName = (id) => courseMap.value[id] || '未选择课程'
+const canStartLearning = computed(() => Boolean(currentContent.value && currentSessionId.value))
 
 const previewType = computed(() => {
-  const type = (currentContent.value?.attachmentType || '').toLowerCase()
-  if (type === 'mp4') return 'video'
-  if (type === 'pdf') return 'pdf'
-  if (isOfficeFile(type)) return 'office'
-  return 'fallback'
+  return resolvePreviewType(currentContent.value?.attachmentType, currentContent.value?.attachmentUrl)
 })
 
 const previewUrl = computed(() => buildPreviewUrl(currentContent.value?.attachmentUrl, currentContent.value?.attachmentType))
-const openUrl = computed(() => buildFileOpenUrl(currentContent.value?.attachmentUrl))
+const openUrl = computed(() => buildAttachmentOpenUrl(currentContent.value?.attachmentUrl, currentContent.value?.attachmentType))
 
 const goBack = () => {
   if (route.query.from === 'content') {
@@ -196,6 +215,28 @@ const openAttachment = () => {
   window.open(openUrl.value, '_blank', 'noopener')
 }
 
+const handleVideoError = () => {
+  videoLoadError.value = true
+  videoLoadErrorText.value = '视频加载失败，可能是编码不兼容。建议教师使用 H.264 + AAC 的 MP4。'
+}
+
+const handleVideoMetaLoaded = (event) => {
+  const width = event?.target?.videoWidth || 0
+  const height = event?.target?.videoHeight || 0
+  if (width <= 0 || height <= 0) {
+    videoLoadError.value = true
+    videoLoadErrorText.value = '检测到视频可能“有声无画”，请联系教师重新上传 H.264 + AAC 的 MP4。'
+    return
+  }
+  videoLoadError.value = false
+  videoLoadErrorText.value = ''
+}
+
+const handleVideoLoaded = () => {
+  videoLoadError.value = false
+  videoLoadErrorText.value = ''
+}
+
 const loadBase = async () => {
   courses.value = await api.studentMyCourses()
   if (!courseId.value && courses.value.length) {
@@ -206,6 +247,8 @@ const loadBase = async () => {
 const syncCurrentContent = () => {
   currentContent.value = contents.value.find((item) => Number(item.id) === Number(contentId.value)) || contents.value[0] || null
   contentId.value = currentContent.value?.id
+  videoLoadError.value = false
+  videoLoadErrorText.value = ''
 }
 
 const refreshAll = async () => {
@@ -220,7 +263,7 @@ const refreshAll = async () => {
   signTasks.value = signRes || []
   quizzes.value = (quizRes || []).filter((item) => Number(item.courseId) === Number(courseId.value))
   sessions.value = sessionRes || []
-  currentSessionId = sessions.value[0]?.id
+  currentSessionId.value = sessions.value[0]?.id || null
   syncCurrentContent()
 }
 
@@ -228,7 +271,7 @@ const buildReportPayload = () => {
   const elapsedSec = startAt ? Math.max(30, Math.floor((Date.now() - startAt) / 1000)) : 30
   const video = videoRef.value
   return {
-    classSessionId: currentSessionId,
+    classSessionId: currentSessionId.value,
     courseId: Number(courseId.value),
     onlineFlag: 1,
     lastActiveTime: new Date(),
@@ -245,8 +288,8 @@ const buildReportPayload = () => {
   }
 }
 
-const reportNow = async () => {
-  if (!running.value || !courseId.value || !currentSessionId) return
+const reportNow = async (force = false) => {
+  if ((!running.value && !force) || !courseId.value || !currentSessionId.value) return
   try {
     lastResult.value = await api.reportBehavior(buildReportPayload())
   } catch {
@@ -286,35 +329,57 @@ const confirmPresence = () => {
   ElMessage.success('已确认仍在学习')
 }
 
-const startLearning = async () => {
+const startLearning = async (options = {}) => {
+  const { auto = false } = options
   if (!currentContent.value) {
     ElMessage.warning('请先选择学习内容')
-    return
+    return false
+  }
+  if (!currentSessionId.value) {
+    ElMessage.warning('当前课程尚未配置课堂会话，暂时无法开始学习采集')
+    return false
   }
   running.value = true
   startAt = Date.now()
-  ElMessage.success('学习采集已开始')
+  ElMessage.success(auto ? '已自动开始学习采集' : '学习采集已开始')
   await reportNow()
   reportTimer = setInterval(reportNow, 30000)
   presenceTimer = setInterval(openPresenceDialog, 180000)
+  return true
 }
 
-const stopLearning = async () => {
+const stopLearning = async (options = {}) => {
+  const { silent = false } = options
+  await reportNow(true)
   running.value = false
   clearTimers()
-  await reportNow()
-  ElMessage.success('学习采集已结束')
+  if (!silent) {
+    ElMessage.success('学习采集已结束')
+  }
+}
+
+const tryAutoStart = async () => {
+  if (!autoStartEnabled.value || autoStartDone.value || running.value || !currentContent.value) return
+  const started = await startLearning({ auto: true })
+  if (started) {
+    autoStartDone.value = true
+  }
 }
 
 watch(courseId, async (value) => {
   if (value) {
+    if (running.value) {
+      await stopLearning({ silent: true })
+    }
     await refreshAll()
+    await tryAutoStart()
   }
 })
 
 onMounted(async () => {
   await loadBase()
   await refreshAll()
+  await tryAutoStart()
 })
 
 onBeforeUnmount(() => {
@@ -386,6 +451,19 @@ onBeforeUnmount(() => {
 
 .resource-frame--doc {
   background: #f6f8ff;
+}
+
+.resource-image-wrap {
+  min-height: 620px;
+  display: grid;
+  place-items: center;
+  background: #f6f8ff;
+}
+
+.resource-image {
+  max-width: 100%;
+  max-height: 620px;
+  object-fit: contain;
 }
 
 .resource-fallback {

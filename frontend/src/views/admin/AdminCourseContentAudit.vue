@@ -46,13 +46,32 @@
       <div v-if="activeItem" class="review-drawer">
         <section class="review-preview surface-box">
           <template v-if="previewType(activeItem) === 'video'">
-            <video :src="openUrl(activeItem)" controls class="review-media">当前浏览器暂不支持视频预览</video>
+            <div v-if="videoPreviewError" class="review-fallback">
+              <p>{{ videoPreviewErrorText }}</p>
+              <div class="action-row">
+                <el-button type="primary" @click="openAttachment(activeItem)">打开视频</el-button>
+                <el-button plain @click="copyAttachmentLink(activeItem)">复制地址</el-button>
+              </div>
+            </div>
+            <video
+              v-else
+              :src="openUrl(activeItem)"
+              controls
+              class="review-media"
+              @error="handleVideoError"
+              @loadedmetadata="handleVideoMetaLoaded"
+            >当前浏览器暂不支持视频预览</video>
           </template>
           <template v-else-if="previewType(activeItem) === 'pdf'">
             <iframe :src="previewUrl(activeItem)" class="review-frame" title="资源预览"></iframe>
           </template>
           <template v-else-if="previewType(activeItem) === 'office'">
             <iframe :src="previewUrl(activeItem)" class="review-frame review-frame--doc" title="Office 文本预览"></iframe>
+          </template>
+          <template v-else-if="previewType(activeItem) === 'image'">
+            <div class="review-image-wrap">
+              <img :src="previewUrl(activeItem)" class="review-image" alt="资源图片预览" />
+            </div>
           </template>
           <template v-else>
             <div class="review-fallback">
@@ -105,27 +124,25 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../../api'
 import StatusBadge from '../../components/StatusBadge.vue'
 import { auditText, formatDateTime } from '../../utils/format'
-import { buildFileOpenUrl, buildPreviewUrl, isOfficeFile } from '../../utils/assets'
+import { buildAttachmentOpenUrl, buildPreviewUrl, resolvePreviewType } from '../../utils/assets'
 
 const list = ref([])
 const status = ref('PENDING')
 const drawerVisible = ref(false)
 const activeItem = ref(null)
+const videoPreviewError = ref(false)
+const videoPreviewErrorText = ref('')
 
 const load = async () => {
   list.value = await api.adminCourseContents({ auditStatus: status.value || undefined })
 }
 
 const previewType = (row) => {
-  const type = (row?.attachmentType || '').toLowerCase()
-  if (type === 'mp4') return 'video'
-  if (type === 'pdf') return 'pdf'
-  if (isOfficeFile(type)) return 'office'
-  return 'other'
+  return resolvePreviewType(row?.attachmentType, row?.attachmentUrl)
 }
 
 const previewUrl = (row) => buildPreviewUrl(row?.attachmentUrl, row?.attachmentType)
-const openUrl = (row) => buildFileOpenUrl(row?.attachmentUrl)
+const openUrl = (row) => buildAttachmentOpenUrl(row?.attachmentUrl, row?.attachmentType)
 
 const openAttachment = (row) => {
   const url = openUrl(row)
@@ -152,7 +169,26 @@ const copyAttachmentLink = async (row) => {
 
 const preview = (row) => {
   activeItem.value = row
+  videoPreviewError.value = false
+  videoPreviewErrorText.value = ''
   drawerVisible.value = true
+}
+
+const handleVideoError = () => {
+  videoPreviewError.value = true
+  videoPreviewErrorText.value = '视频加载失败，可能是编码不兼容。建议教师上传 H.264 + AAC 的 MP4。'
+}
+
+const handleVideoMetaLoaded = (event) => {
+  const width = event?.target?.videoWidth || 0
+  const height = event?.target?.videoHeight || 0
+  if (width <= 0 || height <= 0) {
+    videoPreviewError.value = true
+    videoPreviewErrorText.value = '检测到视频可能“有声无画”，建议教师转码后重新上传。'
+    return
+  }
+  videoPreviewError.value = false
+  videoPreviewErrorText.value = ''
 }
 
 const audit = async (row, auditStatus) => {
@@ -210,6 +246,20 @@ onMounted(load)
   gap: 16px;
   text-align: center;
   color: #5f6b84;
+}
+
+.review-image-wrap {
+  min-height: 620px;
+  display: grid;
+  place-items: center;
+  background: #f6f8ff;
+  border-radius: 16px;
+}
+
+.review-image {
+  max-width: 100%;
+  max-height: 620px;
+  object-fit: contain;
 }
 
 .meta-grid {

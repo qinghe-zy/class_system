@@ -2,9 +2,13 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '')
+const requestTimeout = Number(import.meta.env.VITE_HTTP_TIMEOUT_MS || 30000)
+
 const request = axios.create({
-  baseURL: 'http://127.0.0.1:8080',
-  timeout: 10000
+  // 使用可配置基地址；为空时默认同源，方便通过反向代理或 Vite 代理统一转发。
+  baseURL: apiBaseUrl,
+  timeout: Number.isFinite(requestTimeout) && requestTimeout > 0 ? requestTimeout : 30000
 })
 
 request.interceptors.request.use((config) => {
@@ -32,6 +36,7 @@ request.interceptors.response.use(
     return data
   },
   (error) => {
+    const isTimeout = error?.code === 'ECONNABORTED'
     if (error?.response?.status === 401) {
       const auth = useAuthStore()
       auth.logout()
@@ -39,7 +44,7 @@ request.interceptors.response.use(
         window.location.href = '/login'
       }
     }
-    ElMessage.error(error?.response?.data?.message || error.message || '网络异常')
+    ElMessage.error(isTimeout ? '请求超时，请稍后重试' : (error?.response?.data?.message || error.message || '网络异常'))
     return Promise.reject(error)
   }
 )
