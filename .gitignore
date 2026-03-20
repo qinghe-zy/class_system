@@ -1,0 +1,40 @@
+# ===== 后端 / Java / Spring Boot =====
+backend/target/
+target/
+*.class
+*.iml
+backend/*.iml
+.idea/
+backend/.idea/
+.vscode/
+
+# ===== 前端 / Node.js / Vue =====
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+node_modules/
+dist/
+.env.local
+
+# ===== 上传文件 =====
+blog-system/uploads/
+blog_system/uploads/
+
+# ===== 日志 =====
+*.log
+hs_err_pid*
+replay_pid*
+
+# ===== 打包文件 =====
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# ===== 其他工具/系统文件 =====
+.DS_Store
+*.ctxt
+.mtj.tmp/
